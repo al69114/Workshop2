@@ -14,7 +14,7 @@
  */
 const fs = require("fs");
 const path = require("path");
-const axios = require("axios");
+const axios = require("axios").default ?? require("axios");
 const chalk = require("chalk");
 
 // ── Parse CLI arguments ──────────────────────────────────────────────────────
