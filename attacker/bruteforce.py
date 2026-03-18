@@ -114,6 +114,8 @@ def main():
     parser.add_argument("--maxlen",          type=int, default=3)
     parser.add_argument("--charset",         default="all")
     parser.add_argument("--delay",           type=int, default=0, help="ms between requests")
+    parser.add_argument("--print-every",     type=int, default=0, dest="print_every",
+                        help="Print a progress line every N misses (0 = auto)")
     args = parser.parse_args()
 
     alphabet = build_alphabet(args.charset)
@@ -152,10 +154,15 @@ def main():
     def color(code, text):
         return f"{COLORS[code]}{text}{COLORS['reset']}"
 
-    # In local mode, print a progress update every N misses to avoid flooding
-    # the browser with hundreds of thousands of lines.
-    # In HTTP mode, every attempt is printed (naturally throttled by network).
-    PRINT_EVERY = 500 if args.local_password else 1
+    # How often to print a progress line for misses.
+    # In HTTP mode: every attempt (network naturally throttles output).
+    # In local mode: auto-scale so we emit ~200 lines total, keeping the browser responsive.
+    if args.print_every > 0:
+        PRINT_EVERY = args.print_every
+    elif args.local_password:
+        PRINT_EVERY = max(1, total // 200)
+    else:
+        PRINT_EVERY = 1
 
     for length in range(1, args.maxlen + 1):
         for combo in itertools.product(alphabet, repeat=length):
