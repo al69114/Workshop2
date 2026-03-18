@@ -104,7 +104,31 @@
     }
     .login-result.success { background: #1a3a1a; border: 1px solid #38a169; color: #68d391; }
     .login-result.error   { background: #3a1a1a; border: 1px solid #e53e3e; color: #fc8181; }
-    .login-result.locked  { background: #3a2a00; border: 1px solid #d69e2e; color: #f6e05e; }
+    .login-result.warning { background: #3a2500; border: 1px solid #dd6b20; color: #f6ad55; }
+    .login-result.locked  { background: #3a2a00; border: 1px solid #d69e2e; color: #f6e05e; font-weight: 600; }
+
+    .attempts-bar {
+      margin-top: 10px;
+      display: none;
+    }
+    .attempts-bar-label {
+      font-size: 11px;
+      color: #718096;
+      margin-bottom: 4px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .attempts-bar-track {
+      height: 6px;
+      background: #2d3148;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .attempts-bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.3s, background 0.3s;
+    }
 
     .defenses-card {
       background: #0d1f14;
@@ -225,6 +249,16 @@
 
       <div class="login-result" id="loginResult"></div>
 
+      <div class="attempts-bar" id="attemptsBar">
+        <div class="attempts-bar-label">
+          <span>Failed attempts</span>
+          <span id="attemptsLabel">0 / 5</span>
+        </div>
+        <div class="attempts-bar-track">
+          <div class="attempts-bar-fill" id="attemptsBarFill" style="width:0%"></div>
+        </div>
+      </div>
+
       <div class="hint">
         <strong>Try these — some crack, some don't:</strong><br><br>
         <strong style="color:#fc8181">alice, bob, dave</strong> — 4-char passwords → found in seconds<br>
@@ -279,6 +313,20 @@
 
 <script>
   // ── Login form ──────────────────────────────────────────────
+  const MAX_ATTEMPTS = 5;
+
+  function updateAttemptsBar(used) {
+    const bar   = document.getElementById('attemptsBar');
+    const fill  = document.getElementById('attemptsBarFill');
+    const label = document.getElementById('attemptsLabel');
+    const pct   = Math.min(100, (used / MAX_ATTEMPTS) * 100);
+
+    bar.style.display = 'block';
+    label.textContent = `${used} / ${MAX_ATTEMPTS}`;
+    fill.style.width  = `${pct}%`;
+    fill.style.background = pct < 60 ? '#e53e3e' : pct < 100 ? '#dd6b20' : '#d69e2e';
+  }
+
   async function doLogin() {
     const username = document.getElementById('username').value.trim();
     const password = document.getElementById('password').value;
@@ -295,16 +343,29 @@
       const data = await res.json();
 
       resultEl.style.display = 'block';
+
       if (res.ok) {
         resultEl.className = 'login-result success';
         resultEl.textContent = `✓ Logged in as "${username}"`;
+        document.getElementById('attemptsBar').style.display = 'none';
+
       } else if (res.status === 403) {
         resultEl.className = 'login-result locked';
-        resultEl.textContent = `⚠ ${data.error || 'Account locked'}`;
+        resultEl.textContent = `🔒 Account locked after ${MAX_ATTEMPTS} failed attempts. Try again in 15 minutes.`;
+        updateAttemptsBar(MAX_ATTEMPTS);
+
       } else {
-        resultEl.className = 'login-result error';
-        const remaining = data.attemptsRemaining != null ? ` (${data.attemptsRemaining} attempts left)` : '';
-        resultEl.textContent = `✗ Invalid credentials${remaining}`;
+        const remaining  = data.attemptsRemaining ?? (MAX_ATTEMPTS - 1);
+        const used       = MAX_ATTEMPTS - remaining;
+        updateAttemptsBar(used);
+
+        if (remaining <= 1) {
+          resultEl.className = 'login-result warning';
+          resultEl.textContent = `⚠ Wrong password — ${remaining} attempt left before lockout!`;
+        } else {
+          resultEl.className = 'login-result error';
+          resultEl.textContent = `✗ Invalid credentials — ${remaining} attempts left before lockout`;
+        }
       }
     } catch {
       resultEl.style.display = 'block';
