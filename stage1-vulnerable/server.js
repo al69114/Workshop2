@@ -9,12 +9,45 @@
  *  5. No logging — attacks are invisible
  */
 const express = require("express");
+const fs = require("fs");
+const path = require("path");
 const users = require("./users");
 
 const app = express();
 const PORT = 3001;
 
 app.use(express.json());
+app.use(express.static(path.join(__dirname, "public")));
+
+const WORDLIST = fs
+  .readFileSync(path.join(__dirname, "../attacker/wordlist.txt"), "utf8")
+  .split("\n")
+  .map((p) => p.trim())
+  .filter(Boolean);
+
+app.get("/attack-stream", async (req, res) => {
+  const username = (req.query.username || "bob").toString();
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+
+  const send = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+
+  for (const password of WORDLIST) {
+    const isHit = users[username] && users[username] === password;
+    send({ password, result: isHit ? "hit" : "miss" });
+    // Small delay so the browser can render each line
+    await new Promise((r) => setTimeout(r, 30));
+    if (isHit) {
+      send({ done: true, found: true });
+      return res.end();
+    }
+  }
+
+  send({ done: true, found: false });
+  res.end();
+});
 
 app.post("/login", (req, res) => {
   const { username, password } = req.body;
