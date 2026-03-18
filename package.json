@@ -6,7 +6,8 @@
     "stage1": "node stage1-vulnerable/server.js",
     "stage2": "node stage2-protected/server.js",
     "stage3": "node stage3-hardened/server.js",
-    "attack": "node attacker/bruteforce.js"
+    "attack": "node attacker/bruteforce.js",
+    "bruteforce": "python3 attacker/bruteforce.py"
   },
   "dependencies": {
     "axios": "^1.6.0",

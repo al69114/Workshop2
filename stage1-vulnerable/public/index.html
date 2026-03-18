@@ -145,6 +145,7 @@
 
     .btn-attack { background: #e53e3e; color: #fff; padding: 9px 20px; width: auto; }
     .btn-attack:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-stop { background: #744210; color: #fbd38d; padding: 9px 20px; width: auto; }
     .btn-clear { background: #2d3148; color: #a0aec0; padding: 9px 16px; width: auto; font-weight: 500; }
 
     .stats-bar {
@@ -210,8 +211,11 @@
       <div class="login-result" id="loginResult"></div>
 
       <div class="hint">
-        <strong>Accounts:</strong> alice, bob, carol, dave<br>
-        Try logging in manually, then watch the attack panel crack a password automatically.
+        <strong>Accounts to attack (all have 3-char complex passwords):</strong><br><br>
+        <strong>alice</strong> — A1! &nbsp; <strong>bob</strong> — bB2 &nbsp; <strong>carol</strong> — c@C<br>
+        <strong>dave</strong> — d4# &nbsp; <strong>eve</strong> — E5$<br><br>
+        Each mixes uppercase, lowercase, digits &amp; symbols.<br>
+        The attack runs locally at CPU speed — watch it find each one.
       </div>
     </div>
   </div>
@@ -219,19 +223,28 @@
   <!-- Attack panel -->
   <div class="attack-panel">
     <h2>Brute Force Attack Demo</h2>
-    <p class="subtitle">Tries every password from a common wordlist until one matches.</p>
+    <p class="subtitle">Tries every character combination until the password is found.</p>
 
     <div class="attack-controls">
       <div class="field">
         <label>Target username</label>
-        <input type="text" id="attackUsername" value="bob" />
+        <input type="text" id="attackUsername" value="eve" />
+      </div>
+      <div class="field">
+        <label>Max length</label>
+        <input type="text" id="attackMaxlen" value="3" style="width:70px" />
+      </div>
+      <div class="field">
+        <label>Charset</label>
+        <input type="text" id="attackCharset" value="all" style="width:180px" />
       </div>
       <button class="btn btn-attack" id="startBtn" onclick="startAttack()">▶ Start Attack</button>
+      <button class="btn btn-stop" id="stopBtn" onclick="stopAttack()" style="display:none">■ Stop</button>
       <button class="btn btn-clear" onclick="clearLog()">Clear</button>
     </div>
 
     <div class="stats-bar">
-      <span>Attempts: <strong id="statAttempts">0</strong></span>
+      <span>Lines: <strong id="statAttempts">0</strong></span>
       <span>Status: <strong id="statStatus">—</strong></span>
     </div>
 
@@ -280,86 +293,98 @@
 
   // ── Attack panel ────────────────────────────────────────────
   let eventSource = null;
-  let attempts = 0;
+  let lineCount = 0;
 
   function clearLog() {
     document.getElementById('log').innerHTML =
       '<div class="log-line info"><span>Log cleared.</span></div>';
     document.getElementById('statAttempts').textContent = '0';
     document.getElementById('statStatus').textContent = '—';
-    attempts = 0;
+    lineCount = 0;
   }
 
-  function appendLine(type, content) {
+  function appendRaw(text) {
     const log = document.getElementById('log');
-    const line = document.createElement('div');
-    line.className = `log-line ${type}`;
-    line.innerHTML = content;
-    log.appendChild(line);
+    const div = document.createElement('div');
+    div.style.fontFamily = "'Courier New', monospace";
+    div.style.fontSize   = '12px';
+    div.style.lineHeight = '1.7';
+    div.style.whiteSpace = 'pre';
+
+    if (text.includes('[HIT]') || text.includes('PASSWORD FOUND') || text.includes('Cracked!')) {
+      div.style.color = '#68d391';
+      div.style.fontWeight = 'bold';
+    } else if (text.includes('[MISS]')) {
+      div.style.color = '#fc8181';
+    } else if (text.includes('[BLOCKED]') || text.includes('429') || text.includes('403')) {
+      div.style.color = '#f6e05e';
+    } else if (text.includes('[ERROR]') || text.includes('[STDERR]')) {
+      div.style.color = '#e53e3e';
+    } else {
+      div.style.color = '#718096';
+    }
+
+    div.textContent = text;
+    log.appendChild(div);
     log.scrollTop = log.scrollHeight;
+    lineCount++;
+    document.getElementById('statAttempts').textContent = lineCount;
   }
 
-  function startAttack() {
-    const username = document.getElementById('attackUsername').value.trim() || 'bob';
-    const btn = document.getElementById('startBtn');
+  function setRunning(running) {
+    document.getElementById('startBtn').style.display = running ? 'none' : '';
+    document.getElementById('stopBtn').style.display  = running ? '' : 'none';
+  }
 
+  function stopAttack() {
     if (eventSource) {
       eventSource.close();
       eventSource = null;
     }
+    appendRaw('  [STOPPED] Attack cancelled by user.');
+    document.getElementById('statStatus').textContent = 'Stopped';
+    setRunning(false);
+  }
+
+  function startAttack() {
+    const username = document.getElementById('attackUsername').value.trim() || 'eve';
+    const maxlen   = document.getElementById('attackMaxlen').value.trim()   || '3';
+    const charset  = document.getElementById('attackCharset').value.trim()  || 'lower,digits,symbols';
+    const btn      = document.getElementById('startBtn');
+
+    if (eventSource) { eventSource.close(); eventSource = null; }
 
     clearLog();
-    btn.disabled = true;
-    btn.textContent = '⏳ Running...';
+    setRunning(true);
     document.getElementById('statStatus').textContent = 'Attacking...';
-    attempts = 0;
 
-    eventSource = new EventSource(`/attack-stream?username=${encodeURIComponent(username)}`);
+    const params = new URLSearchParams({ username, maxlen, charset });
+    eventSource = new EventSource(`/bruteforce-stream?${params}`);
 
     eventSource.onmessage = (e) => {
       const data = JSON.parse(e.data);
 
       if (data.done) {
-        if (!data.found) {
-          appendLine('info', '<span>Wordlist exhausted. Password not found.</span>');
-          document.getElementById('statStatus').textContent = 'Not found';
-        }
-        btn.disabled = false;
-        btn.textContent = '▶ Start Attack';
+        document.getElementById('statStatus').textContent = 'Done';
+        setRunning(false);
         eventSource.close();
         eventSource = null;
         return;
       }
 
-      attempts++;
-      document.getElementById('statAttempts').textContent = attempts;
+      const line = data.line || '';
+      appendRaw(line);
 
-      if (data.result === 'hit') {
-        appendLine('hit',
-          `<span class="num">${attempts}</span>` +
-          `<span class="tag">[HIT]</span>` +
-          `<span class="pw">"${data.password}"</span>` +
-          `<span class="status">→ 200 OK ✓ PASSWORD FOUND!</span>`
-        );
-        document.getElementById('statStatus').textContent = `Cracked: "${data.password}"`;
-        btn.disabled = false;
-        btn.textContent = '▶ Start Attack';
-        eventSource.close();
-        eventSource = null;
-      } else {
-        appendLine('miss',
-          `<span class="num">${attempts}</span>` +
-          `<span class="tag">[MISS]</span>` +
-          `<span class="pw">"${data.password}"</span>` +
-          `<span class="status">→ 401 Unauthorized</span>`
-        );
+      if (line.includes('PASSWORD FOUND') || line.includes('Cracked!')) {
+        const match = line.match(/"([^"]+)"/);
+        const pw = match ? match[1] : '?';
+        document.getElementById('statStatus').textContent = `Cracked: "${pw}"`;
       }
     };
 
     eventSource.onerror = () => {
-      appendLine('info', '<span style="color:#e53e3e">Connection error.</span>');
-      btn.disabled = false;
-      btn.textContent = '▶ Start Attack';
+      appendRaw('[ERROR] Connection lost. Is the server running?');
+      resetBtn();
     };
   }
 </script>
