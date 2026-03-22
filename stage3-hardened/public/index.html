@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stage 3 — Hardened Login</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      background: #1a1d27;
+      border-bottom: 1px solid #2d3148;
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    header .badge { background: #38a169; color: #fff; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; padding: 3px 8px; border-radius: 4px; }
+    header h1 { font-size: 16px; font-weight: 600; }
+    header p  { font-size: 13px; color: #718096; margin-left: auto; }
+
+    .panels {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── Shared panel styles ── */
+    .panel { display: flex; flex-direction: column; padding: 24px; border-right: 1px solid #2d3148; overflow: hidden; }
+    .panel:last-child { border-right: none; }
+    .panel h2 { font-size: 15px; margin-bottom: 4px; }
+    .panel .subtitle { font-size: 12px; color: #718096; margin-bottom: 18px; }
+
+    /* ── Login panel ── */
+    .login-card { background: #1a1d27; border: 1px solid #2d3148; border-radius: 12px; padding: 28px 24px; }
+    .login-card h2 { font-size: 18px; margin-bottom: 4px; }
+    .login-card .subtitle { font-size: 13px; color: #718096; margin-bottom: 22px; }
+    label { font-size: 13px; color: #a0aec0; display: block; margin-bottom: 5px; }
+    input[type="text"], input[type="password"] {
+      width: 100%; background: #0f1117; border: 1px solid #2d3148; border-radius: 6px;
+      padding: 9px 12px; color: #e2e8f0; font-size: 14px; margin-bottom: 16px; outline: none;
+    }
+    input:focus { border-color: #38a169; }
+    .btn { width: 100%; padding: 10px; border-radius: 6px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; }
+    .btn-primary  { background: #38a169; color: #fff; }
+    .btn-attack   { background: #e53e3e; color: #fff; padding: 8px 16px; width: auto; }
+    .btn-stop     { background: #744210; color: #fbd38d; padding: 8px 16px; width: auto; }
+    .btn-clear    { background: #2d3148; color: #a0aec0; padding: 8px 14px; width: auto; }
+    .btn:hover    { opacity: 0.85; }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .login-result { margin-top: 14px; padding: 10px 14px; border-radius: 6px; font-size: 13px; display: none; }
+    .login-result.success { background: #1a3a1a; border: 1px solid #38a169; color: #68d391; }
+    .login-result.error   { background: #3a1a1a; border: 1px solid #e53e3e; color: #fc8181; }
+    .login-result.warning { background: #3a2500; border: 1px solid #dd6b20; color: #f6ad55; }
+    .login-result.locked  { background: #3a2a00; border: 1px solid #d69e2e; color: #f6e05e; font-weight: 600; }
+
+    .attempts-bar { margin-top: 10px; display: none; }
+    .attempts-bar-label { font-size: 11px; color: #718096; margin-bottom: 4px; display: flex; justify-content: space-between; }
+    .attempts-bar-track { height: 6px; background: #2d3148; border-radius: 3px; overflow: hidden; }
+    .attempts-bar-fill  { height: 100%; border-radius: 3px; transition: width 0.3s, background 0.3s; }
+
+    .defenses {
+      margin-top: 18px;
+      background: #0f1f0f;
+      border: 1px solid #276749;
+      border-radius: 8px;
+      padding: 14px;
+      font-size: 12px;
+    }
+    .defenses h4 { color: #68d391; margin-bottom: 10px; font-size: 12px; }
+    .defense-row { display: flex; align-items: center; gap: 8px; color: #9ae6b4; margin-bottom: 6px; }
+    .defense-row:last-child { margin-bottom: 0; }
+    .dot { width: 6px; height: 6px; background: #38a169; border-radius: 50%; flex-shrink: 0; }
+
+    /* ── Attack panel ── */
+    .attack-controls { display: flex; gap: 8px; align-items: flex-end; margin-bottom: 14px; flex-wrap: wrap; }
+    .attack-controls .field { display: flex; flex-direction: column; gap: 4px; }
+    .attack-controls label  { font-size: 11px; color: #718096; }
+    .attack-controls input  { background: #1a1d27; border: 1px solid #2d3148; border-radius: 6px; padding: 7px 10px; color: #e2e8f0; font-size: 12px; outline: none; }
+    .stats-bar { display: flex; gap: 16px; margin-bottom: 10px; font-size: 12px; color: #718096; }
+    .stats-bar strong { color: #e2e8f0; }
+
+    .log {
+      flex: 1; overflow-y: auto; background: #0a0c12; border: 1px solid #2d3148;
+      border-radius: 8px; padding: 12px; font-family: 'Courier New', monospace;
+      font-size: 11px; line-height: 1.7;
+    }
+    .log::-webkit-scrollbar { width: 5px; }
+    .log::-webkit-scrollbar-thumb { background: #2d3148; border-radius: 3px; }
+
+    /* ── Audit log panel ── */
+    .audit-log {
+      flex: 1; overflow-y: auto; background: #0a0c12; border: 1px solid #2d3148;
+      border-radius: 8px; padding: 12px; font-family: 'Courier New', monospace; font-size: 11px;
+    }
+    .audit-entry { display: flex; gap: 10px; padding: 4px 0; border-bottom: 1px solid #1a1d27; line-height: 1.5; }
+    .audit-entry:last-child { border-bottom: none; }
+    .audit-time { color: #4a5568; min-width: 85px; font-size: 10px; padding-top: 1px; }
+    .audit-type { min-width: 130px; font-weight: 600; font-size: 10px; }
+    .audit-type.success { color: #68d391; }
+    .audit-type.failure { color: #fc8181; }
+    .audit-type.locked  { color: #f6e05e; }
+    .audit-user { color: #90cdf4; }
+    .audit-entry.existing { opacity: 0.5; }
+    .audit-count { font-size: 11px; color: #718096; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <span class="badge">STAGE 3</span>
+  <h1>Hardened Login — bcrypt + Helmet + Audit Log</h1>
+  <p>Workshop: Brute Force Attacks &amp; Password Security</p>
+</header>
+
+<div class="panels">
+
+  <!-- Login form -->
+  <div class="panel">
+    <div class="login-card">
+      <h2>Sign in</h2>
+      <p class="subtitle">Enter your credentials to continue</p>
+
+      <label>Username</label>
+      <input type="text" id="username" placeholder="e.g. bob" autocomplete="off" />
+
+      <label>Password</label>
+      <input type="password" id="password" placeholder="••••••••" />
+
+      <button class="btn btn-primary" id="loginBtn">Sign in</button>
+
+      <div class="login-result" id="loginResult"></div>
+      <div class="attempts-bar" id="attemptsBar">
+        <div class="attempts-bar-label">
+          <span>Failed attempts</span>
+          <span id="attemptsLabel">0 / 5</span>
+        </div>
+        <div class="attempts-bar-track">
+          <div class="attempts-bar-fill" id="attemptsBarFill" style="width:0%"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="defenses" style="margin-top:18px">
+      <h4>✓ Active Defenses</h4>
+      <div class="defense-row"><span class="dot"></span>bcrypt hashing (cost 12) — ~100ms per attempt</div>
+      <div class="defense-row"><span class="dot"></span>IP rate limiting — max 10 requests per 15 min</div>
+      <div class="defense-row"><span class="dot"></span>Account lockout — locked after 5 failed attempts</div>
+      <div class="defense-row"><span class="dot"></span>Security headers via Helmet</div>
+      <div class="defense-row"><span class="dot"></span>Audit logging — every attempt recorded</div>
+    </div>
+  </div>
+
+  <!-- Attack panel -->
+  <div class="panel">
+    <h2>Brute Force Attack</h2>
+    <p class="subtitle">Tries common passwords against every user. Watch each defense trigger in real time.</p>
+
+    <div class="attack-controls">
+      <button class="btn btn-attack" id="startBtn">▶ Demo All Users</button>
+      <button class="btn btn-stop"   id="stopBtn"  style="display:none">■ Stop</button>
+      <button class="btn btn-clear"  id="clearBtn">Clear</button>
+    </div>
+
+    <div class="stats-bar">
+      <span>Lines: <strong id="statLines">0</strong></span>
+      <span>Status: <strong id="statStatus">—</strong></span>
+    </div>
+
+    <div class="log" id="attackLog">
+      <div style="color:#718096;font-style:italic">Click "Demo All Users" to begin...</div>
+    </div>
+  </div>
+
+  <!-- Audit log -->
+  <div class="panel">
+    <h2>Live Audit Log</h2>
+    <p class="subtitle">Every login attempt is recorded in real time.</p>
+    <div class="audit-count" id="auditCount">0 events</div>
+    <div class="audit-log" id="auditLog">
+      <div style="color:#718096;font-style:italic;font-size:11px">Waiting for events...</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  // ── Login form ──────────────────────────────────────────────
+  const MAX_ATTEMPTS = 5;
+
+  function updateAttemptsBar(used) {
+    const pct = Math.min(100, (used / MAX_ATTEMPTS) * 100);
+    document.getElementById('attemptsBar').style.display = 'block';
+    document.getElementById('attemptsLabel').textContent = `${used} / ${MAX_ATTEMPTS}`;
+    const fill = document.getElementById('attemptsBarFill');
+    fill.style.width = `${pct}%`;
+    fill.style.background = pct < 60 ? '#e53e3e' : pct < 100 ? '#dd6b20' : '#d69e2e';
+  }
+
+  async function doLogin() {
+    const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value;
+    const resultEl = document.getElementById('loginResult');
+    if (!username || !password) return;
+
+    try {
+      const res  = await fetch('/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      const data = await res.json();
+      resultEl.style.display = 'block';
+
+      if (res.ok) {
+        resultEl.className = 'login-result success';
+        resultEl.textContent = `✓ Logged in as "${username}"`;
+        document.getElementById('attemptsBar').style.display = 'none';
+      } else if (res.status === 403) {
+        resultEl.className = 'login-result locked';
+        resultEl.textContent = `🔒 Account locked after ${MAX_ATTEMPTS} failed attempts. Try again in 15 minutes.`;
+        updateAttemptsBar(MAX_ATTEMPTS);
+      } else {
+        const remaining = data.attemptsRemaining ?? (MAX_ATTEMPTS - 1);
+        const used = MAX_ATTEMPTS - remaining;
+        updateAttemptsBar(used);
+        if (remaining <= 1) {
+          resultEl.className = 'login-result warning';
+          resultEl.textContent = `⚠ Wrong password — ${remaining} attempt left before lockout!`;
+        } else {
+          resultEl.className = 'login-result error';
+          resultEl.textContent = `✗ Invalid credentials — ${remaining} attempts left before lockout`;
+        }
+      }
+    } catch {
+      resultEl.style.display = 'block';
+      resultEl.className = 'login-result error';
+      resultEl.textContent = '✗ Request failed';
+    }
+  }
+
+  document.getElementById('loginBtn').addEventListener('click', doLogin);
+  document.getElementById('password').addEventListener('keydown', e => {
+    if (e.key === 'Enter') doLogin();
+  });
+
+  // ── Attack panel ────────────────────────────────────────────
+  let attackES = null;
+  let lineCount = 0;
+
+  function clearLog() {
+    document.getElementById('attackLog').innerHTML =
+      '<div style="color:#718096;font-style:italic">Log cleared.</div>';
+    document.getElementById('statLines').textContent = '0';
+    document.getElementById('statStatus').textContent = '—';
+    lineCount = 0;
+  }
+
+  const TYPE_COLORS = {
+    header:  '#90cdf4',
+    miss:    '#fc8181',
+    blocked: '#f6e05e',
+    defense: '#68d391',
+    hit:     '#68d391',
+    info:    '#718096',
+  };
+
+  function appendLog(text, type = 'info') {
+    const log = document.getElementById('attackLog');
+    const div = document.createElement('div');
+    div.style.whiteSpace  = 'pre';
+    div.style.fontWeight  = (type === 'header' || type === 'hit') ? 'bold' : 'normal';
+    div.style.color       = TYPE_COLORS[type] || '#718096';
+    div.textContent = text;
+    log.appendChild(div);
+    log.scrollTop = log.scrollHeight;
+    lineCount++;
+    document.getElementById('statLines').textContent = lineCount;
+  }
+
+  function setRunning(running) {
+    document.getElementById('startBtn').style.display = running ? 'none' : '';
+    document.getElementById('stopBtn').style.display  = running ? ''     : 'none';
+  }
+
+  function stopAttack() {
+    if (attackES) { attackES.close(); attackES = null; }
+    appendLog('  [STOPPED] Demo cancelled.', 'blocked');
+    document.getElementById('statStatus').textContent = 'Stopped';
+    setRunning(false);
+  }
+
+  function startAttack() {
+    if (attackES) { attackES.close(); attackES = null; }
+    clearLog();
+    setRunning(true);
+    document.getElementById('statStatus').textContent = 'Running...';
+
+    attackES = new EventSource('/demo-stream');
+
+    attackES.onmessage = (e) => {
+      const data = JSON.parse(e.data);
+      if (data.done) {
+        document.getElementById('statStatus').textContent = 'All blocked ✓';
+        setRunning(false);
+        attackES.close(); attackES = null;
+        return;
+      }
+      appendLog(data.line || '', data.type || 'info');
+    };
+
+    attackES.onerror = () => {
+      appendLog('  [ERROR] Connection lost. Is the server running?', 'blocked');
+      setRunning(false);
+    };
+  }
+
+  // ── Audit log stream ────────────────────────────────────────
+  let auditCount = 0;
+
+  function typeClass(type) {
+    if (type === 'LOGIN_SUCCESS') return 'success';
+    if (type === 'ACCOUNT_LOCKED' || type === 'ACCOUNT_LOCKED_ATTEMPT') return 'locked';
+    return 'failure';
+  }
+
+  function appendAudit(entry, existing) {
+    const log = document.getElementById('auditLog');
+
+    // Remove placeholder
+    const placeholder = log.querySelector('div[style]');
+    if (placeholder && placeholder.textContent.includes('Waiting')) placeholder.remove();
+
+    const time = new Date(entry.timestamp).toLocaleTimeString();
+    const row  = document.createElement('div');
+    row.className = `audit-entry${existing ? ' existing' : ''}`;
+    row.innerHTML =
+      `<span class="audit-time">${time}</span>` +
+      `<span class="audit-type ${typeClass(entry.type)}">${entry.type}</span>` +
+      `<span class="audit-user">${entry.username || ''}</span>`;
+    log.appendChild(row);
+    log.scrollTop = log.scrollHeight;
+
+    auditCount++;
+    document.getElementById('auditCount').textContent =
+      `${auditCount} event${auditCount !== 1 ? 's' : ''}`;
+  }
+
+  document.getElementById('startBtn').addEventListener('click', startAttack);
+  document.getElementById('stopBtn').addEventListener('click', stopAttack);
+  document.getElementById('clearBtn').addEventListener('click', clearLog);
+
+  const auditES = new EventSource('/audit-stream');
+  auditES.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    if (data.entry) appendAudit(data.entry, data.existing);
+  };
+</script>
+</body>
+</html>
